@@ -20,8 +20,8 @@ global TX := Map(
     "MsgGroup", "6. Multiline message templates to send",
     "BtnStart", "Start",
     "BtnStop", "Stop",
-    "BtnOptions", "⚙  Options",
-    "BtnScan", "📡  Scan chats",
+    "BtnOptions", "⚙ Options",
+    "BtnScan", "📡 Scan chats",
     "HintStart", "Start automation (Ctrl+``)",
     "HintStop", "Stop automation (Shift+Esc)",
     "HintOptions", "Open options (Ctrl+O)",
@@ -718,7 +718,7 @@ class TickLoop {
     static TimerCallback := (*) => TickLoop.MainTick()
 
     static SetActionButton(Running) {
-        ControlSetText(Running ? "◼  " TX["BtnStop"] : "▶  " TX["BtnStart"], MainWindow.Ui.Action.Hwnd)
+        ControlSetText(Running ? "◼ " TX["BtnStop"] : "▶ " TX["BtnStart"], MainWindow.Ui.Action.Hwnd)
     }
 
     static SaveInputCache() {
@@ -1045,7 +1045,7 @@ class MainWindow {
     }
     
     static AddActionRow() {
-        MainWindow.Ui.Action := MainWindow.Ui.Main.Add("Button", "x10 y390 w320 h40 Default", "▶  " TX["BtnStart"])
+        MainWindow.Ui.Action := MainWindow.Ui.Main.Add("Button", "x10 y390 w320 h40 Default", "▶ " TX["BtnStart"])
         MainWindow.Ui.Options := MainWindow.Ui.Main.Add("Button", "x350 y390 w150 h40", TX["BtnOptions"])
         Hints.Add(MainWindow.Ui.Action, (*) => State.Mode == "Stopped" ? TX["HintStart"] : TX["HintStop"])
         Hints.Add(MainWindow.Ui.Options, TX["HintOptions"])
