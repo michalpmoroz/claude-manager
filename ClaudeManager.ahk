@@ -612,8 +612,18 @@ class ClaudeChecker {
 
     ; "out of free messages ... until Mar 5 at 6:00 AM" -> yyyyMMddHHmmss, or "" when absent
     static ParseWeeklyLimit(Text) {
-        Pattern := "i)out\s+of\s+free\s+messages.{1,200}?until\s+([a-z]{3})\s+([0-9]{1,2})\s+at\s+([0-9]{1,2}:[0-9]{2})(\s*[AP]M)?"
-        if !RegExMatch(Text, Pattern, &Match)
+        ; Every pattern captures: 1 month, 2 day, 3 time, 4 AM/PM. Add new message wordings here.
+        Patterns := [
+            "i)out\s+of\s+free\s+messages.{1,200}?until\s+([a-z]{3})\s+([0-9]{1,2})\s+at\s+([0-9]{1,2}:[0-9]{2})(\s*[AP]M)?",
+            "i)free\s+usage\s+returns\s+([a-z]{3})[a-z]*\.?\s+([0-9]{1,2})(?:st|nd|rd|th)?,?\s+at\s+([0-9]{1,2}:[0-9]{2})(\s*[AP]M)?"
+        ]
+        Match := ""
+        for Pattern in Patterns {
+            if RegExMatch(Text, Pattern, &Match)
+                break
+            Match := ""
+        }
+        if (Match == "")
             return ""
         Months := Map("jan", "01", "feb", "02", "mar", "03", "apr", "04", "may", "05", "jun", "06"
             , "jul", "07", "aug", "08", "sep", "09", "oct", "10", "nov", "11", "dec", "12")
@@ -630,7 +640,19 @@ class ClaudeChecker {
 
     ; "out of free messages ... until 6:00 AM" -> "HH:mm", or "" when absent
     static ParseHourlyLimit(Text) {
-        if !RegExMatch(Text, "i)out\s+of\s+free\s+messages.{1,200}?until\s+([0-9]{1,2}:[0-9]{2})(\s*[AP]M)?", &Match)
+        ; Every pattern captures: 1 time, 2 AM/PM. Add new message wordings here.
+        Patterns := [
+            "i)out\s+of\s+free\s+messages.{1,200}?until\s+([0-9]{1,2}:[0-9]{2})(\s*[AP]M)?",
+            "i)out\s+of\s+free\s+messages.{1,200}?until\s+tomorrow\s+at\s+([0-9]{1,2}:[0-9]{2})(\s*[AP]M)?",
+            "i)free\s+usage\s+returns\s+(?:tomorrow\s+)?(?:at\s+)?([0-9]{1,2}:[0-9]{2})(\s*[AP]M)?"
+        ]
+        Match := ""
+        for Pattern in Patterns {
+            if RegExMatch(Text, Pattern, &Match)
+                break
+            Match := ""
+        }
+        if (Match == "")
             return ""
         if (Match[2] == "")
             return Match[1]
