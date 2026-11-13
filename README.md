@@ -26,6 +26,11 @@ An AutoHotkey v2 tool that watches the Claude Desktop app, detects usage limits,
 3. Set the delays, repetition mode, target chat and message, then press **Start**.
 
 Claude UI automation relies on fixed coordinates, keyboard shortcuts and window text, so changes in the Claude app may break it.
+If the conversation cannot be recognized, the manager shows a notification, reports a read error in the status, and retries at the next check instead of reporting that there is no limit. Enable event logging in Options for additional diagnostics.
+
+## Testing
+
+Run `AutoHotkey64.exe /ErrorStdOut TestClaudeManager.ahk` from this directory. The tests cover limit parsing and reset calculations without interacting with Claude.
 
 ## Hotkeys
 

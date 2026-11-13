@@ -43,6 +43,7 @@ global TX := Map(
     "MsgStop", "Automation has been stopped.",
     "StatusInit", "Status: Waiting for initial check`nRemaining: ",
     "StatusCheck", "Status: Monitoring Claude (No limit)`nNext check: ",
+    "StatusReadError", "Status: Could not read Claude conversation`nNext check: ",
     "StatusLimit", "Status: LIMIT DETECTED!`nReset date: ",
     "StatusLimitUntil", "Status: LIMIT UNTIL ",
     "StatusPost", "Status: Limit expired! Final delay active`nSending in: ",
@@ -162,6 +163,7 @@ class State {
     static LoopDurationEnd := ""
     static TtKillTime := ""
     static WeeklyWarning := false
+    static ReadError := false
 }
 
 ; =========================================================================
@@ -330,7 +332,8 @@ class StatusTooltip {
 class ClaudeWindow {
     static BeginClaudeSession(PreDelay) {
         Session := {Prev: WinExist("A"), Minimized: (WinGetMinMax(MainWindow.Ui.Main.Hwnd) == -1), Active: false}
-        Sleep(PreDelay)
+        if (PreDelay > 0)
+            Sleep(PreDelay)
         WinActivate(TARGET_WIN)
         Session.Active := WinWaitActive(TARGET_WIN, , 5) ? true : false
         return Session
@@ -347,17 +350,17 @@ class ClaudeWindow {
     }
 
     ; --- Basic actions ---
-    static ClaudeResetFocus() {
+    static ClaudeResetFocus(Delay := 150) {
         CoordMode "Mouse", "Window"
         Click(45, 55)
-        Sleep(150)
+        Sleep(Delay)
     }
 
-    static ClaudeCopyAllText() {
+    static ClaudeCopyAllText(SelectionDelay := 150) {
         SavedClip := ClipboardAll()
         A_Clipboard := ""
         Send("^a")
-        Sleep(150)
+        Sleep(SelectionDelay)
         Send("^c")
         Text := ClipWait(1.5, 1) ? Trim(A_Clipboard) : ""
         A_Clipboard := SavedClip
@@ -599,15 +602,25 @@ class ClaudeWindow {
 ; Reads the conversation text of the active Claude window, reduced to plain ASCII
 class ClaudeChecker {
     static ReadConversationText() {
-        ClaudeWindow.ClaudeResetFocus()
-        WinGetPos , , &W, &H, TARGET_WIN
-        Click(W / 2, H / 2)
-        Sleep(300)
-        Raw := ClaudeWindow.ClaudeCopyAllText()
-        Sleep(250)
-        if (Raw == "")
-            return ""
-        return RegExReplace(RegExReplace(Raw, "[^\x00-\x7F]+", " "), "\s+", " ")
+        Loop 3 {
+            Delay := (A_Index == 1) ? 30 : 150
+            ClaudeWindow.ClaudeResetFocus(Delay)
+            Raw := ClaudeWindow.ClaudeCopyAllText(Delay)
+            Text := ClaudeChecker.NormalizeConversationText(Raw)
+            if ClaudeChecker.IsConversationText(Text)
+                return Text
+            if (A_Index < 3)
+                Sleep(250)
+        }
+        return ""
+    }
+
+    static NormalizeConversationText(Text) {
+        return RegExReplace(RegExReplace(Text, "[^\x00-\x7F]+", " "), "\s+", " ")
+    }
+
+    static IsConversationText(Text) {
+        return RegExMatch(Text, "i)Claude\s+is\s+AI\s+and\s+can\s+make\s+mistakes|Please\s+double-check\s+responses|How\s+can\s+I\s+help\s+you\s+today\?|Type\s*/\s*for\s+skills") > 0
     }
 
     ; "out of free messages ... until Mar 5 at 6:00 AM" -> yyyyMMddHHmmss, or "" when absent
@@ -639,7 +652,8 @@ class ClaudeChecker {
     }
 
     ; "out of free messages ... until 6:00 AM" -> "HH:mm", or "" when absent
-    static ParseHourlyLimit(Text) {
+    static ParseHourlyLimit(Text, &IsTomorrow := false) {
+        IsTomorrow := false
         ; Every pattern captures: 1 time, 2 AM/PM. Add new message wordings here.
         Patterns := [
             "i)out\s+of\s+free\s+messages.{1,200}?until\s+([0-9]{1,2}:[0-9]{2})(\s*[AP]M)?",
@@ -654,6 +668,7 @@ class ClaudeChecker {
         }
         if (Match == "")
             return ""
+        IsTomorrow := RegExMatch(Match[0], "i)\btomorrow\b") > 0
         if (Match[2] == "")
             return Match[1]
         TimeParts := StrSplit(Match[1], ":")
@@ -663,14 +678,23 @@ class ClaudeChecker {
     static CheckClaude() {
         if !WinExist(TARGET_WIN)
             return
-        Session := ClaudeWindow.BeginClaudeSession(250)
-        if (Session.Active) {
-            Sleep(350)
-            Text := ClaudeChecker.ReadConversationText()
-            if (Text != "")
+        Session := ClaudeWindow.BeginClaudeSession(0)
+        Text := ""
+        try {
+            if (Session.Active) {
+                Text := ClaudeChecker.ReadConversationText()
+            }
+            WasReadError := State.ReadError
+            State.ReadError := (Text == "")
+            if (State.ReadError) {
+                App.WriteLog("Could not read the Claude conversation; will retry at the next check.")
+                if (!WasReadError)
+                    TrayTip("Could not read the Claude conversation. The next check will retry.", TX["Title"], "Icon!")
+            } else
                 ClaudeChecker.ProcessLimitText(Text)
+        } finally {
+            ClaudeWindow.EndClaudeSession(Session)
         }
-        ClaudeWindow.EndClaudeSession(Session)
     }
 
     static ProcessLimitText(Text) {
@@ -680,8 +704,8 @@ class ClaudeChecker {
 
         if ((Stamp := ClaudeChecker.ParseWeeklyLimit(Text)) != "")
             ClaudeChecker.OnWeeklyLimit(Stamp)
-        else if ((Clock := ClaudeChecker.ParseHourlyLimit(Text)) != "")
-            ClaudeChecker.OnHourlyLimit(Clock)
+        else if ((Clock := ClaudeChecker.ParseHourlyLimit(Text, &IsTomorrow)) != "")
+            ClaudeChecker.OnHourlyLimit(Clock, IsTomorrow)
         else if RegExMatch(Text, "i)Claude\s+reached\s+its\s+tool-use\s+limit\s+for\s+this\s+turn\.")
             ClaudeChecker.OnToolUseLimit()
     }
@@ -695,8 +719,14 @@ class ClaudeChecker {
         App.TriggerAlert("Claude weekly limit reached!", "*48")
     }
 
-    static OnHourlyLimit(Clock) {
-        State.TargetResetTime := Clock
+    static HourlyResetStamp(Clock, IsTomorrow, Now) {
+        Parts := StrSplit(Clock, ":")
+        Stamp := SubStr(Now, 1, 8) Format("{:02d}{:02d}00", Number(Parts[1]), Number(Parts[2]))
+        return (IsTomorrow || Stamp <= Now) ? DateAdd(Stamp, 1, "Days") : Stamp
+    }
+
+    static OnHourlyLimit(Clock, IsTomorrow) {
+        State.TargetResetTime := ClaudeChecker.HourlyResetStamp(Clock, IsTomorrow, A_Now)
         State.Mode := "LimitWait"
         App.WriteLog("Short-term Limit detected: " Clock)
         App.TriggerAlert("Claude limit reached!", "*48")
@@ -780,6 +810,7 @@ class TickLoop {
 
         InitSec := TimeUtils.GetSeconds(MainWindow.Ui.Init)
         State.TargetResetTime := ""
+        State.ReadError := false
         State.TtKillTime := DateAdd(A_Now, Number(Cfg.TooltipTime), "Seconds")
         State.Mode := (InitSec > 0) ? "InitialWait" : "Checking"
         State.TimeLeft := (InitSec > 0) ? InitSec : CheckSec
@@ -860,7 +891,8 @@ class TickLoop {
     static TickChecking(Info) {
         State.TimeLeft--
         NextCheck := FormatTime(DateAdd(A_Now, State.TimeLeft, "Seconds"), "HH:mm:ss")
-        StatusTooltip.Update(TX["StatusCheck"] NextCheck " (in " TimeUtils.FormatSeconds(State.TimeLeft) ")" Info)
+        StatusKey := State.ReadError ? "StatusReadError" : "StatusCheck"
+        StatusTooltip.Update(TX[StatusKey] NextCheck " (in " TimeUtils.FormatSeconds(State.TimeLeft) ")" Info)
         if (State.TimeLeft <= 0) {
             State.TimeLeft := TimeUtils.GetSeconds(MainWindow.Ui.Check)
             ClaudeChecker.CheckClaude()
@@ -881,7 +913,7 @@ class TickLoop {
             TickLoop.SendMessageToClaude()
     }
 
-    ; Reset time is either a full 14-digit timestamp (weekly limit) or "HH:mm" (hourly limit)
+    ; New limits use absolute timestamps; also accept an existing "HH:mm" target.
     static SecondsUntilReset() {
         Target := State.TargetResetTime
         if (StrLen(Target) == 14)

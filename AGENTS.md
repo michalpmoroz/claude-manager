@@ -29,5 +29,5 @@ Guidance for working on Claude Manager (AutoHotkey v2).
 - Saving options must not replace the 1-second `MainTick` timer.
 - Every repetition mode (including `ForDuration`) must set `State.LoopType`.
 - Window handling around Claude actions: `BeginClaudeSession` / `EndClaudeSession` activate Claude and restore the previous window. The bot window is never hidden or forced on top.
-- Reset time is either a 14-digit timestamp (weekly limit, `yyyyMMddHHmmss`) or `HH:mm` (hourly limit).
+- Newly detected reset times are stored as 14-digit timestamps (`yyyyMMddHHmmss`); the countdown also accepts legacy `HH:mm` targets.
 - Claude UI automation depends on fixed coordinates, keyboard shortcuts and window text. Changes in the Claude app can break it.
